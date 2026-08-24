@@ -1,0 +1,39 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+)
+
+type rampInput struct {
+	Targets []float64 `json:"targets"`
+}
+
+func valveRampHandler(runtime *Runtime) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var input rampInput
+		if err := decodeJSON(r, &input); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if len(input.Targets) == 0 || len(input.Targets) > 12 {
+			writeError(w, http.StatusBadRequest, errors.New("targets must contain 1 to 12 steps"))
+			return
+		}
+		chamberID := chi.URLParam(r, "chamberID")
+		cycleValue, ok := runtime.Cycles.Current(chamberID)
+		if !ok {
+			writeError(w, http.StatusConflict, errors.New("active transit not found"))
+			return
+		}
+		result, err := runtime.Hydraulics.RampTo(context.Background(), cycleValue, input.Targets)
+		if err != nil {
+			writeError(w, http.StatusRequestTimeout, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	}
+}
