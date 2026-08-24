@@ -59,15 +59,17 @@ func (s *State) Position(chamberID string, direction model.Direction) PositionRe
 	return record
 }
 
+// Sealed reports a chamber sealed only when both gates rest at the closed
+// position. A gate that is merely closing has not yet settled, so it must not
+// be treated as sealed: admitting the next vessel before the gate is firmly
+// shut risks an interlock emergency stop and leaves the queue stuck released.
 func (s *State) Sealed(chamberID string) bool {
 	s.mu.RLock()
 	positions := s.positions[chamberID]
 	upstream := positions[model.DirectionUpstream]
 	downstream := positions[model.DirectionDownstream]
 	s.mu.RUnlock()
-	upstreamReady := upstream.Position == model.GateClosed || upstream.Position == model.GateClosing
-	downstreamReady := downstream.Position == model.GateClosed || downstream.Position == model.GateClosing
-	return upstreamReady && downstreamReady
+	return upstream.Position.Sealed() && downstream.Position.Sealed()
 }
 
 func (s *State) ReadyForAdmission(chamberID string) bool {
