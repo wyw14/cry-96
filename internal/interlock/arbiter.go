@@ -25,19 +25,22 @@ func (a *Arbiter) Reserve(chamberID string, direction model.Direction, owner str
 	if chamberID == "" || !direction.Valid() || owner == "" || commit == nil {
 		return Reservation{}, errors.New("reservation requires chamber, direction, owner and commit")
 	}
+	// Hold the lock across check + commit + record so a concurrent takeover
+	// (auto-cycle vs operator) cannot pass the opposite-direction check
+	// before this reservation is committed. Releasing the lock between the
+	// check and commit allowed two opposing directions to both issue gate
+	// commands, leaking mutual exclusion and producing the
+	// "interlock conflict active=upstream requested=downstream" state.
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	if current, ok := a.active[chamberID]; ok && current.Direction != direction {
-		a.mu.Unlock()
 		return Reservation{}, errors.New("opposed gate direction is already reserved")
 	}
-	a.mu.Unlock()
 	if err := commit(); err != nil {
 		return Reservation{}, err
 	}
 	reservation := Reservation{ChamberID: chamberID, Direction: direction, Owner: owner}
-	a.mu.Lock()
 	a.active[chamberID] = reservation
-	a.mu.Unlock()
 	return reservation, nil
 }
 
