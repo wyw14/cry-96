@@ -93,6 +93,16 @@ func (c *Coordinator) ApplyGateAck(ctx context.Context, ack model.DeviceAck) err
 		c.mu.Unlock()
 		return errors.New("device acknowledgement belongs to an inactive transit generation")
 	}
+	// A gate command is bound to the transit generation that issued it. A late
+	// acknowledgement for a cancelled superseded cycle must not advance the
+	// current cycle, otherwise a stale receipt crosses transit generations and
+	// pushes the new cycle out of its preparation stage. Match by cycle identity
+	// (the authoritative command record carries the issuing generation) before
+	// advancing, mirroring the guard used by ApplySignalHandoff.
+	if !cycleValue.IdentityMatches(command.CycleID, command.Generation) {
+		c.mu.Unlock()
+		return errors.New("device acknowledgement belongs to a superseded transit generation")
+	}
 	next, err := nextAfterGate(cycleValue.Stage)
 	if err == nil {
 		err = cycleValue.Advance(next, "matching gate command settled", c.now())
