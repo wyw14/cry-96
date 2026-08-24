@@ -52,6 +52,17 @@ func (r *Registry) Renew(vesselID uuid.UUID, owner string, token uint64, ttl tim
 	if !lease.Active(now) {
 		return model.Lease{}, errors.New("lease has expired")
 	}
+	// Reject stale owners: only the current holder (matching owner and fencing
+	// token) may extend the lease. Without this, a disconnected terminal that
+	// reconnects and replays its old heartbeat would renew a lease that has
+	// since been reassigned to a backup console, leaving two terminals each
+	// believing they hold control.
+	if lease.Owner != owner {
+		return model.Lease{}, fmt.Errorf("lease owner %q does not match requester %q", lease.Owner, owner)
+	}
+	if lease.FencingToken != token {
+		return model.Lease{}, fmt.Errorf("fencing token %d does not match lease token %d", token, lease.FencingToken)
+	}
 	lease.ExpiresAt = now.UTC().Add(ttl)
 	r.leases[vesselID] = lease
 	return lease, nil
