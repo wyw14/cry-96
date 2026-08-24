@@ -24,11 +24,18 @@ func NewLevelWindow(capacity int) (*LevelWindow, error) {
 	return &LevelWindow{capacity: capacity}, nil
 }
 
+// Begin starts a fresh judgment window for the given transit generation. Any
+// samples left over from a previous generation — for example after a plan is
+// withdrawn and the same chamber is restarted in the same direction — would
+// otherwise pollute the next cycle's window and let a stable verdict trigger on
+// stale readings. Clearing the slice here guarantees the verdict only uses
+// samples that belong to this generation.
 func (w *LevelWindow) Begin(cycleID uuid.UUID, generation uint64) {
 	w.mu.Lock()
 	if w.cycleID != cycleID || w.generation != generation {
 		w.cycleID = cycleID
 		w.generation = generation
+		w.samples = nil
 	}
 	w.mu.Unlock()
 }
